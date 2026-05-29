@@ -117,7 +117,8 @@ export class UniversalVideoAdapter {
     this.translatedExportAbortController?.abort()
     const abortController = new AbortController()
     this.translatedExportAbortController = abortController
-    const { onProgress, signal = abortController.signal } = options ?? {}
+    const { onProgress, signal: externalSignal } = options ?? {}
+    const { signal, cleanup } = this.linkTranslatedExportAbortSignal(abortController, externalSignal)
 
     try {
       await this.getOrLoadSourceSubtitles()
@@ -137,9 +138,41 @@ export class UniversalVideoAdapter {
       })
     }
     finally {
+      cleanup()
       if (this.translatedExportAbortController === abortController) {
         this.translatedExportAbortController = null
       }
+    }
+  }
+
+  private linkTranslatedExportAbortSignal(
+    abortController: AbortController,
+    externalSignal?: AbortSignal,
+  ): { signal: AbortSignal, cleanup: () => void } {
+    if (!externalSignal) {
+      return { signal: abortController.signal, cleanup: () => {} }
+    }
+
+    if (typeof AbortSignal.any === "function") {
+      return {
+        signal: AbortSignal.any([abortController.signal, externalSignal]),
+        cleanup: () => {},
+      }
+    }
+
+    const onExternalAbort = () => {
+      abortController.abort()
+    }
+
+    if (externalSignal.aborted) {
+      abortController.abort()
+      return { signal: abortController.signal, cleanup: () => {} }
+    }
+
+    externalSignal.addEventListener("abort", onExternalAbort, { once: true })
+    return {
+      signal: abortController.signal,
+      cleanup: () => externalSignal.removeEventListener("abort", onExternalAbort),
     }
   }
 

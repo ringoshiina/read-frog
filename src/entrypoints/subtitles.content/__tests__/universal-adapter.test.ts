@@ -267,6 +267,28 @@ describe("universalVideoAdapter", () => {
     expect(mocks.downloadSubtitlesAsSrt).not.toHaveBeenCalled()
   })
 
+  it("aborts translated export on navigation when the UI supplies an external signal", async () => {
+    const { adapter } = createAdapter([
+      { text: "Hello.", start: 0, end: 1000 },
+    ])
+    const externalAbortController = new AbortController()
+    let releaseTranslation: (() => void) | undefined
+    mocks.translateSubtitles.mockImplementation(() => new Promise<SubtitlesFragment[]>((resolve) => {
+      releaseTranslation = () => {
+        resolve([{ text: "Hello.", start: 0, end: 1000, translation: "zh:Hello." }])
+      }
+    }))
+
+    const exportPromise = adapter.downloadTranslatedSubtitles({ signal: externalAbortController.signal })
+    await Promise.resolve()
+
+    ;(adapter as any).resetForNavigation()
+
+    await expect(exportPromise).rejects.toMatchObject({ name: "AbortError" })
+    expect(mocks.downloadSubtitlesAsSrt).not.toHaveBeenCalled()
+    releaseTranslation?.()
+  })
+
   it("does not download when any translated subtitle line is missing", async () => {
     const { adapter } = createAdapter([
       { text: "Hello.", start: 0, end: 1000 },
